@@ -1,0 +1,101 @@
+# Project settings for Multimodal Deepfake Detection using Evidential Learning
+# and Dempster-Shafer Fusion.
+
+project:
+  name: multimodal-deepfake-detector
+  seed: 42
+  output_dir: artifacts
+  device: auto  # auto | cpu | cuda
+  deterministic: false
+
+# Set dataset_root to a path on the machine running the project. Keep it null
+# until you have supplied a dataset. Expected manifest format will be documented
+# when the data pipeline is implemented.
+data:
+  dataset_root: null
+  train_manifest: null
+  validation_manifest: null
+  test_manifest: null
+  audio_sample_rate: 16000
+  audio_num_samples: 64000
+  video_num_frames: 16
+  frame_sampling: uniform
+  image_size: 600  # EfficientNet-B7 default input resolution
+  classes: [real, fake]
+  real_label: 0
+  fake_label: 1
+
+model:
+  num_classes: 2
+  audio:
+    encoder: rawnet
+    feature_dim: 1024
+    # RawNet variant and frontend details must be fixed and documented when
+    # the encoder is implemented; this config does not imply pretrained weights.
+    pretrained: false
+    checkpoint: null
+  visual:
+    encoder: efficientnet_b7
+    pooled_feature_dim: 2560
+    projection_dim: 1024
+    pretrained: false
+    checkpoint: null
+    weights_source: torchvision  # only used if pretrained is explicitly enabled
+  heads:
+    audio_input_dim: 1024
+    visual_input_dim: 1024
+    pseudo_view_input_dim: 2048
+    output_dim: 2
+    evidence_activation: softplus
+    dirichlet_prior: 1.0
+  fusion:
+    method: dempster_shafer
+    order: [audio_visual, fused_with_pseudo_view]
+    normalize_conflict: true
+
+training:
+  epochs: 30
+  batch_size: 8
+  num_workers: 4
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  mixed_precision: true
+  gradient_clip_norm: 1.0
+  evidential_kl_weight: 0.1
+  kl_warmup_epochs: 10
+  loss_weights:
+    audio: 1.0
+    visual: 1.0
+    pseudo: 1.0
+    fused: 1.0
+  imbalance:
+    strategy: class_weights  # class_weights | balanced_sampler | none
+  # Auxiliary labels are approximately balanced; overall-label branches use
+  # inverse-frequency weights for approximately 500 REAL / 1500 FAKE rows.
+  class_weights:
+    audio: [1.0, 1.0]
+    visual: [1.0, 1.0]
+    pseudo: [1.5, 0.5]
+    fused: [1.5, 0.5]
+  audio_encoder_lr: 0.00001
+  visual_encoder_lr: 0.00001
+  encoder_finetune_lr: 0.00001
+  unfreeze_schedule:
+    4:
+      visual_last_blocks: 2
+    7:
+      visual_last_blocks: 4
+      audio_encoder: true
+  lr_patience: 2
+  lr_factor: 0.5
+  checkpoint_every_epochs: 1
+  early_stopping_patience: 8
+  monitor: validation_fused_macro_f1
+
+evaluation:
+  metrics: [accuracy, precision, recall, f1, roc_auc, confusion_matrix]
+  average: macro
+  save_predictions: true
+  threshold_method: max_balanced_accuracy  # max_balanced_accuracy | max_f1 | recall_at_least
+  operating_point: null
+  batch_size: 8

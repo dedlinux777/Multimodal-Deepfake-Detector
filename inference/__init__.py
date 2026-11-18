@@ -1,0 +1,1 @@
+"""Checkpoint-backed multimodal inference."""
